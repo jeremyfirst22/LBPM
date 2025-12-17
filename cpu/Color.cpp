@@ -15,6 +15,7 @@
   along with OPM.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include <math.h>
+#include <cstdio>
 
 #define STOKES
 
@@ -1460,6 +1461,9 @@ extern "C" void ScaLBL_D3Q19_AAeven_Color(
     const double mrt_V11 = 0.01388888888888889;
     const double mrt_V12 = 0.04166666666666666;
 
+    const double Cmin = 1e-12;
+    const double rho_min = 1e-12;
+
     for (int n = start; n < finish; n++) {
 
         // read the component number densities
@@ -1467,10 +1471,20 @@ extern "C" void ScaLBL_D3Q19_AAeven_Color(
         nB = Den[Np + n];
 
         // compute phase indicator field
-        phi = (nA - nB) / (nA + nB);
+        double rhoAB = nA + nB;
+        if (!isfinite(rhoAB)){
+            printf("Non finite density detected. Aborting.\n");
+            abort();
+        }
+        if (rhoAB < rho_min)
+            rhoAB = rho_min;
+        phi = (nA - nB) / rhoAB;
 
         // local density
         rho0 = rhoA + 0.5 * (1.0 - phi) * (rhoB - rhoA);
+        if (rho0 < rho_min)
+            rho0 = rho_min;
+
         // local relaxation time
         tau = tauA + 0.5 * (1.0 - phi) * (tauB - tauA);
         rlx_setA = 1.f / tau;
@@ -1542,12 +1556,14 @@ extern "C" void ScaLBL_D3Q19_AAeven_Color(
 
         //...........Normalize the Color Gradient.................................
         C = sqrt(nx * nx + ny * ny + nz * nz);
-        double ColorMag = C;
-        if (C == 0.0)
-            ColorMag = 1.0;
-        nx = nx / ColorMag;
-        ny = ny / ColorMag;
-        nz = nz / ColorMag;
+        if (C < Cmin) {
+            nx = ny = nz = 0.0;
+            C = 0.0;
+        } else {
+            nx = nx / C;
+            ny = ny / C;
+            nz = nz / C;
+        }
 
         // q=0
         fq = dist[n];
@@ -1981,8 +1997,7 @@ extern "C" void ScaLBL_D3Q19_AAeven_Color(
 
         // Instantiate mass transport distributions
         // Stationary value - distribution 0
-
-        nAB = 1.0 / (nA + nB);
+        nAB = (rhoAB > rho_min) ? 1.0 / rhoAB : 0.0;
         Aq[n] = 0.3333333333333333 * nA;
         Bq[n] = 0.3333333333333333 * nB;
 
@@ -2075,6 +2090,9 @@ extern "C" void ScaLBL_D3Q19_AAodd_Color(
     const double mrt_V11 = 0.01388888888888889;
     const double mrt_V12 = 0.04166666666666666;
 
+    const double Cmin = 1e-12;
+    const double rho_min = 1e-12;
+
     for (int n = start; n < finish; n++) {
 
         // read the component number densities
@@ -2082,10 +2100,20 @@ extern "C" void ScaLBL_D3Q19_AAodd_Color(
         nB = Den[Np + n];
 
         // compute phase indicator field
-        phi = (nA - nB) / (nA + nB);
+        double rhoAB = nA + nB;
+        if (!isfinite(rhoAB)){
+            printf("Non finite density detected. Aborting.\n");
+            abort();
+        }
+        if (rhoAB < rho_min)
+            rhoAB = rho_min;
+        phi = (nA - nB) / rhoAB;
 
         // local density
         rho0 = rhoA + 0.5 * (1.0 - phi) * (rhoB - rhoA);
+        if (rho0 < rho_min)
+            rho0 = rho_min;
+
         // local relaxation time
         tau = tauA + 0.5 * (1.0 - phi) * (tauB - tauA);
         rlx_setA = 1.f / tau;
@@ -2157,12 +2185,14 @@ extern "C" void ScaLBL_D3Q19_AAodd_Color(
 
         //...........Normalize the Color Gradient.................................
         C = sqrt(nx * nx + ny * ny + nz * nz);
-        double ColorMag = C;
-        if (C == 0.0)
-            ColorMag = 1.0;
-        nx = nx / ColorMag;
-        ny = ny / ColorMag;
-        nz = nz / ColorMag;
+        if (C < Cmin) {
+            nx = ny = nz = 0.0;
+            C = 0.0;
+        } else {
+            nx = nx / C;
+            ny = ny / C;
+            nz = nz / C;
+        }
 
         // q=0
         fq = dist[n];
@@ -2659,7 +2689,7 @@ extern "C" void ScaLBL_D3Q19_AAodd_Color(
 
         // Instantiate mass transport distributions
         // Stationary value - distribution 0
-        nAB = 1.0 / (nA + nB);
+        nAB = (rhoAB > rho_min) ? 1.0 / rhoAB : 0.0;
         Aq[n] = 0.3333333333333333 * nA;
         Bq[n] = 0.3333333333333333 * nB;
 

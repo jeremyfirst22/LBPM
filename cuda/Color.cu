@@ -17,6 +17,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <cuda_profiler_api.h>
+#include <assert.h>
 
 #define NBLOCKS 1024
 #define NTHREADS 256
@@ -1295,21 +1296,52 @@ __global__  void dvc_ScaLBL_D3Q19_AAeven_Color(int *Map, double *dist, double *A
 	const double mrt_V11=0.01388888888888889;
 	const double mrt_V12=0.04166666666666666;
 
+  const double Cmin = 1e-12;
+  const double rho_min = 1e-12;
+
 	int S = Np/NBLOCKS/NTHREADS + 1;
 	for (int s=0; s<S; s++){
 		//........Get 1-D index for this thread....................
 		n =  S*blockIdx.x*blockDim.x + s*blockDim.x + threadIdx.x + start;
+
 		if (n<finish) {
+
+			if (!isfinite(Den[n]) || !isfinite(Den[Np + n])) {
+			    printf("Non-finite Den at n=%d: nA=%g nB=%g\n", n, Den[n], Den[Np+n]);
+			    assert(false);
+			}
+
+			if (!isfinite(dist[n])) {
+			    printf("Non-finite dist at n=%d: %g\n", n, dist[n]);
+			    assert(false);
+			}
+
+			if (!isfinite(Phi[n])) {
+			    printf("Non-finite Phi at n=%d: %g\n", n, Phi[n]);
+			    assert(false);
+			}
 
 			// read the component number densities
 			nA = Den[n];
 			nB = Den[Np + n];
 
 			// compute phase indicator field
-			phi=(nA-nB)/(nA+nB);
+      double rhoAB = nA + nB;
+      if (!isfinite(rhoAB)){
+          printf("Non finite density detected. Aborting.  .\n"
+          	"nA: %5.5e\n"
+          	"nB: %5.5e\n", nA, nB);
+          assert(false);
+      }
+      if (rhoAB < rho_min)
+          rhoAB = rho_min;
+      phi = (nA - nB) / rhoAB;
 
 			// local density
-			rho0=rhoA + 0.5*(1.0-phi)*(rhoB-rhoA);
+      rho0 = rhoA + 0.5 * (1.0 - phi) * (rhoB - rhoA);
+      if (rho0 < rho_min)
+          rho0 = rho_min;
+
 			// local relaxation time
 			tau=tauA + 0.5*(1.0-phi)*(tauB-tauA);
 			rlx_setA = 1.f/tau;
@@ -1380,12 +1412,15 @@ __global__  void dvc_ScaLBL_D3Q19_AAeven_Color(int *Map, double *dist, double *A
 			nz = -(m5-m6+0.5*(m11-m12-m13+m14+m15-m16-m17+m18));
 
 			//...........Normalize the Color Gradient.................................
-			C = sqrt(nx*nx+ny*ny+nz*nz);
-			double ColorMag = C;
-			if (C==0.0) ColorMag=1.0;
-			nx = nx/ColorMag;
-			ny = ny/ColorMag;
-			nz = nz/ColorMag;		
+      C = sqrt(nx * nx + ny * ny + nz * nz);
+      if (C < Cmin) {
+          nx = ny = nz = 0.0;
+          C = 0.0;
+      } else {
+          nx = nx / C;
+          ny = ny / C;
+          nz = nz / C;
+      }
 
 			// q=0
 			fq = dist[n];
@@ -1794,8 +1829,7 @@ __global__  void dvc_ScaLBL_D3Q19_AAeven_Color(int *Map, double *dist, double *A
 
 			// Instantiate mass transport distributions
 			// Stationary value - distribution 0
-
-			nAB = 1.0/(nA+nB);
+      nAB = (rhoAB > rho_min) ? 1.0 / rhoAB : 0.0;
 			Aq[n] = 0.3333333333333333*nA;
 			Bq[n] = 0.3333333333333333*nB;
 
@@ -1849,6 +1883,11 @@ __global__  void dvc_ScaLBL_D3Q19_AAeven_Color(int *Map, double *dist, double *A
 }
 
 
+__device__ double check_index(int idx, int Np) {
+    if (idx < 0 || idx >= Np)
+        printf("Warning: neighbor index %d out of bounds (0..%d)\n", idx, Np-1);
+}
+
 __global__ void dvc_ScaLBL_D3Q19_AAodd_Color(int *neighborList, int *Map, double *dist, double *Aq, double *Bq, double *Den,
 		 double *Phi, double *Velocity, double rhoA, double rhoB, double tauA, double tauB, double alpha, double beta,
 		double Fx, double Fy, double Fz, int strideY, int strideZ, int start, int finish, int Np){
@@ -1883,20 +1922,52 @@ __global__ void dvc_ScaLBL_D3Q19_AAodd_Color(int *neighborList, int *Map, double
 	const double mrt_V11=0.01388888888888889;
 	const double mrt_V12=0.04166666666666666;
 
+  const double Cmin = 1e-12;
+  const double rho_min = 1e-12;
+
 	int S = Np/NBLOCKS/NTHREADS + 1;
 	for (int s=0; s<S; s++){
 		//........Get 1-D index for this thread....................
 		n =  S*blockIdx.x*blockDim.x + s*blockDim.x + threadIdx.x + start;
+
 		if (n<finish) {
+
+			if (!isfinite(Den[n]) || !isfinite(Den[Np + n])) {
+			    printf("Non-finite Den at n=%d: nA=%g nB=%g\n", n, Den[n], Den[Np+n]);
+			    assert(false);
+			}
+
+			if (!isfinite(dist[n])) {
+			    printf("Non-finite dist at n=%d: %g\n", n, dist[n]);
+			    assert(false);
+			}
+
+			if (!isfinite(Phi[n])) {
+			    printf("Non-finite Phi at n=%d: %g\n", n, Phi[n]);
+			    assert(false);
+			}
+
 			// read the component number densities
 			nA = Den[n];
 			nB = Den[Np + n];
 
 			// compute phase indicator field
-			phi=(nA-nB)/(nA+nB);
+      double rhoAB = nA + nB;
+      if (!isfinite(rhoAB)){
+          printf("Non finite density detected. Aborting.\n"
+          	"nA: %5.5e\n"
+          	"nB: %5.5e\n", nA, nB);
+          assert(false);
+      }
+      if (rhoAB < rho_min)
+          rhoAB = rho_min;
+      phi = (nA - nB) / rhoAB;
 
 			// local density
-			rho0=rhoA + 0.5*(1.0-phi)*(rhoB-rhoA);
+      rho0 = rhoA + 0.5 * (1.0 - phi) * (rhoB - rhoA);
+      if (rho0 < rho_min)
+          rho0 = rho_min;
+
 			// local relaxation time
 			tau=tauA + 0.5*(1.0-phi)*(tauB-tauA);
 			rlx_setA = 1.f/tau;
@@ -1909,57 +1980,75 @@ __global__ void dvc_ScaLBL_D3Q19_AAodd_Color(int *neighborList, int *Map, double
 			//.................Read Phase Indicator Values............................
 			//........................................................................
 			nn = ijk-1;							// neighbor index (get convention)
+			// check_index(nn, Np);
 			m1 = Phi[nn];						// get neighbor for phi - 1
 			//........................................................................
 			nn = ijk+1;							// neighbor index (get convention)
+			// check_index(nn, Np);
 			m2 = Phi[nn];						// get neighbor for phi - 2
 			//........................................................................
 			nn = ijk-strideY;							// neighbor index (get convention)
+			// check_index(nn, Np);
 			m3 = Phi[nn];					// get neighbor for phi - 3
 			//........................................................................
 			nn = ijk+strideY;							// neighbor index (get convention)
+			// check_index(nn, Np);
 			m4 = Phi[nn];					// get neighbor for phi - 4
 			//........................................................................
 			nn = ijk-strideZ;						// neighbor index (get convention)
+			// check_index(nn, Np);
 			m5 = Phi[nn];					// get neighbor for phi - 5
 			//........................................................................
 			nn = ijk+strideZ;						// neighbor index (get convention)
+			// check_index(nn, Np);
 			m6 = Phi[nn];					// get neighbor for phi - 6
 			//........................................................................
 			nn = ijk-strideY-1;						// neighbor index (get convention)
+			// check_index(nn, Np);
 			m7 = Phi[nn];					// get neighbor for phi - 7
 			//........................................................................
 			nn = ijk+strideY+1;						// neighbor index (get convention)
+			// check_index(nn, Np);
 			m8 = Phi[nn];					// get neighbor for phi - 8
 			//........................................................................
 			nn = ijk+strideY-1;						// neighbor index (get convention)
+			// check_index(nn, Np);
 			m9 = Phi[nn];					// get neighbor for phi - 9
 			//........................................................................
 			nn = ijk-strideY+1;						// neighbor index (get convention)
+			// check_index(nn, Np);
 			m10 = Phi[nn];					// get neighbor for phi - 10
 			//........................................................................
 			nn = ijk-strideZ-1;						// neighbor index (get convention)
+			// check_index(nn, Np);
 			m11 = Phi[nn];					// get neighbor for phi - 11
 			//........................................................................
 			nn = ijk+strideZ+1;						// neighbor index (get convention)
+			// check_index(nn, Np);
 			m12 = Phi[nn];					// get neighbor for phi - 12
 			//........................................................................
 			nn = ijk+strideZ-1;						// neighbor index (get convention)
+			// check_index(nn, Np);
 			m13 = Phi[nn];					// get neighbor for phi - 13
 			//........................................................................
 			nn = ijk-strideZ+1;						// neighbor index (get convention)
+			// check_index(nn, Np);
 			m14 = Phi[nn];					// get neighbor for phi - 14
 			//........................................................................
 			nn = ijk-strideZ-strideY;					// neighbor index (get convention)
+			// check_index(nn, Np);
 			m15 = Phi[nn];					// get neighbor for phi - 15
 			//........................................................................
 			nn = ijk+strideZ+strideY;					// neighbor index (get convention)
+			// check_index(nn, Np);
 			m16 = Phi[nn];					// get neighbor for phi - 16
 			//........................................................................
 			nn = ijk+strideZ-strideY;					// neighbor index (get convention)
+			// check_index(nn, Np);
 			m17 = Phi[nn];					// get neighbor for phi - 17
 			//........................................................................
 			nn = ijk-strideZ+strideY;					// neighbor index (get convention)
+			// check_index(nn, Np);
 			m18 = Phi[nn];					// get neighbor for phi - 18
 			//............Compute the Color Gradient...................................
 			nx = -(m1-m2+0.5*(m7-m8+m9-m10+m11-m12+m13-m14));
@@ -1967,12 +2056,15 @@ __global__ void dvc_ScaLBL_D3Q19_AAodd_Color(int *neighborList, int *Map, double
 			nz = -(m5-m6+0.5*(m11-m12-m13+m14+m15-m16-m17+m18));
 
 			//...........Normalize the Color Gradient.................................
-			C = sqrt(nx*nx+ny*ny+nz*nz);
-			double ColorMag = C;
-			if (C==0.0) ColorMag=1.0;
-			nx = nx/ColorMag;
-			ny = ny/ColorMag;
-			nz = nz/ColorMag;		
+      C = sqrt(nx * nx + ny * ny + nz * nz);
+      if (C < Cmin) {
+          nx = ny = nz = 0.0;
+          C = 0.0;
+      } else {
+          nx = nx / C;
+          ny = ny / C;
+          nz = nz / C;
+      }
 
 			// q=0
 			fq = dist[n];
@@ -2444,7 +2536,7 @@ __global__ void dvc_ScaLBL_D3Q19_AAodd_Color(int *neighborList, int *Map, double
 
 			// Instantiate mass transport distributions
 			// Stationary value - distribution 0
-			nAB = 1.0/(nA+nB);
+			nAB = (rhoAB > rho_min) ? 1.0 / rhoAB : 0.0;
 			Aq[n] = 0.3333333333333333*nA;
 			Bq[n] = 0.3333333333333333*nB;
 
